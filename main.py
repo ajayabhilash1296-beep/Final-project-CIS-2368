@@ -585,3 +585,256 @@ def get_inventory():
         LEFT JOIN (SELECT equipmentid, SUM(quantity) AS returned FROM returntransaction
                    GROUP BY equipmentid) t ON t.equipmentid = equipment.id
         ORDER BY category.categoryname, equipment.equipmentname""")
+
+# ==============================================================
+# PART 4: THE API ENDPOINTS
+# ==============================================================
+ 
+app = flask.Flask(__name__)
+app.config["DEBUG"] = True 
+app.json.sort_keys = False 
+ 
+ 
+def get_body():
+    # The JSON body as a dictionary ({} if there isn't one)
+    body = request.get_json(silent=True)
+    return body if isinstance(body, dict) else {}
+ 
+ 
+def get_param(name):
+    # Read a value from the URL (?id=3) or, if it isn't there, from the JSON body ({"id": 3})
+    value = request.args.get(name)
+    if value is None:
+        value = get_body().get(name)
+    return value
+ 
+ 
+def not_found(thing, thingid):
+    return jsonify({'error': f'No {thing} with id {thingid}'}), 404
+ 
+ 
+@app.errorhandler(RuleError)
+def handle_rule_error(error):
+    # Any RuleError raised in Part 3 becomes a 400 with the message
+    return jsonify({'error': str(error)}), 400
+ 
+ 
+@app.errorhandler(mysql.connector.Error)
+def handle_database_error(error):
+    # Wrong login in Part 1, database not reachable, etc.
+    return jsonify({'error': f'Database error: {error.msg}'}), 500
+ 
+ 
+# ===== CUSTOMER: all on /api/customer =====
+ 
+@app.route('/api/customer', methods=['GET'])
+def api_get_customer():
+    # /api/customer -> all customers,  /api/customer?id=1 -> one customer
+    customerid = get_param('id')
+    if customerid is None:
+        return jsonify(get_customers()), 200
+    customer = get_customer(customerid)
+    if customer is None:
+        return not_found('customer', customerid)
+    return jsonify(customer), 200
+ 
+ 
+@app.route('/api/customer', methods=['POST'])
+def api_add_customer():
+    data = get_body()
+    new_id = add_customer(data.get('firstname'), data.get('lastname'), data.get('email'))
+    return jsonify(get_customer(new_id)), 201
+ 
+ 
+@app.route('/api/customer', methods=['PUT'])
+def api_update_customer():
+    data = get_body()
+    customerid = get_param('id')
+    customer = update_customer(customerid, data.get('firstname'), data.get('lastname'), data.get('email'))
+    if customer is None:
+        return not_found('customer', customerid)
+    return jsonify(customer), 200
+ 
+ 
+@app.route('/api/customer', methods=['DELETE'])
+def api_delete_customer():
+    customerid = get_param('id')
+    if not delete_customer(customerid):
+        return not_found('customer', customerid)
+    return jsonify({'message': f'Customer {customerid} deleted'}), 200
+ 
+ 
+# ===== CATEGORY: all on /api/category =====
+ 
+@app.route('/api/category', methods=['GET'])
+def api_get_category():
+    categoryid = get_param('id')
+    if categoryid is None:
+        return jsonify(get_categories()), 200
+    category = get_category(categoryid)
+    if category is None:
+        return not_found('category', categoryid)
+    return jsonify(category), 200
+ 
+ 
+@app.route('/api/category', methods=['POST'])
+def api_add_category():
+    data = get_body()
+    new_id = add_category(data.get('categoryname'), data.get('description'))
+    return jsonify(get_category(new_id)), 201
+ 
+ 
+@app.route('/api/category', methods=['PUT'])
+def api_update_category():
+    data = get_body()
+    categoryid = get_param('id')
+    category = update_category(categoryid, data.get('categoryname'), data.get('description'))
+    if category is None:
+        return not_found('category', categoryid)
+    return jsonify(category), 200
+ 
+ 
+@app.route('/api/category', methods=['DELETE'])
+def api_delete_category():
+    categoryid = get_param('id')
+    if not delete_category(categoryid):
+        return not_found('category', categoryid)
+    return jsonify({'message': f'Category {categoryid} deleted'}), 200
+ 
+ 
+# ===== EQUIPMENT: all on /api/equipment =====
+ 
+@app.route('/api/equipment', methods=['GET'])
+def api_get_equipment():
+    equipmentid = get_param('id')
+    if equipmentid is None:
+        return jsonify(get_all_equipment()), 200
+    equipment = get_equipment(equipmentid)
+    if equipment is None:
+        return not_found('equipment', equipmentid)
+    return jsonify(equipment), 200
+ 
+ 
+@app.route('/api/equipment', methods=['POST'])
+def api_add_equipment():
+    data = get_body()
+    new_id = add_equipment(data.get('equipmentname'), data.get('categoryid'),
+                           data.get('dailyrate'), data.get('quantityavailable'))
+    return jsonify(get_equipment(new_id)), 201
+ 
+ 
+@app.route('/api/equipment', methods=['PUT'])
+def api_update_equipment():
+    data = get_body()
+    equipmentid = get_param('id')
+    equipment = update_equipment(equipmentid, data.get('equipmentname'), data.get('categoryid'),
+                                 data.get('dailyrate'), data.get('quantityavailable'))
+    if equipment is None:
+        return not_found('equipment', equipmentid)
+    return jsonify(equipment), 200
+ 
+ 
+@app.route('/api/equipment', methods=['DELETE'])
+def api_delete_equipment():
+    equipmentid = get_param('id')
+    if not delete_equipment(equipmentid):
+        return not_found('equipment', equipmentid)
+    return jsonify({'message': f'Equipment {equipmentid} deleted'}), 200
+ 
+ 
+# ===== RENTAL TRANSACTIONS: all on /api/rental =====
+ 
+@app.route('/api/rental', methods=['GET'])
+def api_get_rental():
+    rentalid = get_param('id')
+    if rentalid is None:
+        return jsonify(get_rentals()), 200
+    rental = get_rental(rentalid)
+    if rental is None:
+        return not_found('rental', rentalid)
+    return jsonify(rental), 200
+ 
+ 
+@app.route('/api/rental', methods=['POST'])
+def api_create_rental():
+    # Body: customerid, equipmentid, quantity  (id and date are generated automatically)
+    data = get_body()
+    new_id = create_rental(data.get('customerid'), data.get('equipmentid'), data.get('quantity'))
+    return jsonify(get_rental(new_id)), 201
+ 
+ 
+@app.route('/api/rental', methods=['PUT'])
+def api_update_rental():
+    data = get_body()
+    rentalid = get_param('id')
+    if update_rental(rentalid, data.get('customerid'), data.get('equipmentid'), data.get('quantity')) is None:
+        return not_found('rental', rentalid)
+    return jsonify(get_rental(rentalid)), 200
+ 
+ 
+@app.route('/api/rental', methods=['DELETE'])
+def api_delete_rental():
+    rentalid = get_param('id')
+    if not delete_rental(rentalid):
+        return not_found('rental', rentalid)
+    return jsonify({'message': f'Rental {rentalid} deleted and its units put back in stock'}), 200
+ 
+ 
+# ===== RETURN TRANSACTIONS: all on /api/return =====
+ 
+@app.route('/api/return', methods=['GET'])
+def api_get_return():
+    returnid = get_param('id')
+    if returnid is None:
+        return jsonify(get_returns()), 200
+    ret = get_return(returnid)
+    if ret is None:
+        return not_found('return', returnid)
+    return jsonify(ret), 200
+ 
+ 
+@app.route('/api/return', methods=['POST'])
+def api_create_return():
+    # Body: customerid, equipmentid, quantity  (id and date are generated automatically)
+    data = get_body()
+    new_id = create_return(data.get('customerid'), data.get('equipmentid'), data.get('quantity'))
+    return jsonify(get_return(new_id)), 201
+ 
+ 
+@app.route('/api/return', methods=['PUT'])
+def api_update_return():
+    data = get_body()
+    returnid = get_param('id')
+    if update_return(returnid, data.get('customerid'), data.get('equipmentid'), data.get('quantity')) is None:
+        return not_found('return', returnid)
+    return jsonify(get_return(returnid)), 200
+ 
+ 
+@app.route('/api/return', methods=['DELETE'])
+def api_delete_return():
+    returnid = get_param('id')
+    if not delete_return(returnid):
+        return not_found('return', returnid)
+    return jsonify({'message': f'Return {returnid} deleted and its units taken back out of stock'}), 200
+ 
+ 
+# ===== REPORTS =====
+ 
+@app.route('/api/customerrentals', methods=['GET'])
+def api_customer_rentals():
+    customerid = get_param('customerid')
+    if customerid is None:
+        return jsonify({'error': 'customerid is required, e.g. /api/customerrentals?customerid=1'}), 400
+    result = get_customer_rentals(customerid)
+    if result is None:
+        return not_found('customer', customerid)
+    return jsonify(result), 200
+ 
+ 
+@app.route('/api/inventory', methods=['GET'])
+def api_inventory():
+    return jsonify(get_inventory()), 200
+ 
+ 
+if __name__ == '__main__':
+    app.run()
